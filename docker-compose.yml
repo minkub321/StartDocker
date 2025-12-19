@@ -1,34 +1,84 @@
 version: '3.8'
+
 services:
+  # PHP + Apache Web Server
   php-apache-environment:
     container_name: php-apache
     build: 
       context: ./php
       dockerfile: Dockerfile
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ./php/src:/var/www/html/
     ports:
-      - 8080:80
-  db:
-    container_name: db
-    image: mysql
-    restart: always
+      - "8080:80"
     environment:
-      MYSQL_ROOT_PASSWORD: MYSQL_ROOT_PASSWORD
-      MYSQL_DATABASE: MYSQL_DATABASE
-      MYSQL_USER: MYSQL_USER
-      MYSQL_PASSWORD: MYSQL_PASSWORD
+      - PHP_MEMORY_LIMIT=256M
+    networks:
+      - php-dev-network
+    restart: unless-stopped
+
+  # MySQL Database
+  db:
+    container_name: mysql-db
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: myapp
+      MYSQL_USER: devuser
+      MYSQL_PASSWORD: devpassword
     ports:
-      - "9906:3306"
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - php-dev-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # phpMyAdmin
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    image: phpmyadmin/phpmyadmin:latest
     ports:
       - "8000:80"
-    restart: always
+    restart: unless-stopped
     environment:
       PMA_HOST: db
+      PMA_PORT: 3306
+      MYSQL_ROOT_PASSWORD: rootpassword
+      UPLOAD_LIMIT: 300M
     depends_on:
       - db
-      
+    networks:
+      - php-dev-network
+
+  # Redis Cache
+  redis:
+    container_name: redis-cache
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - php-dev-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  mysql-data:
+  redis-data:
+
+networks:
+  php-dev-network:
+    driver: bridge

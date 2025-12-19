@@ -1,0 +1,3 @@
+# Place your SQL initialization files here
+# Files in this directory will be executed automatically when MySQL container starts for the first time
+
